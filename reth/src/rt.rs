@@ -20,6 +20,14 @@ unsafe impl core::alloc::GlobalAlloc for Alloc {
     }
 }
 
+// FIXME: ZisK's runtime allocates internally (e.g. the modexp precompile), so
+//        the guest must share its bump-allocator state via the runtime's
+//        exported `sys_alloc_aligned`.
+//        The standards-aligned path (guest defines its own allocator over
+//        `_heap_start` and `_heap_end` linker symbols) bumps independent
+//        pointers over the same heap region and corrupts both sides.
+//        That path becomes viable once ZisK either stops internal allocation or
+//        exposes a standardized allocator ABI.
 unsafe extern "C" {
     fn sys_alloc_aligned(size: usize, align: usize) -> *mut u8;
 }

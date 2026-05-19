@@ -49,7 +49,7 @@ bytes = { version = "1", default-features = false, features = ["extra-platforms"
 critical-section = { version = "1", default-features = false }
 portable-atomic = { version = "1", default-features = false, features = ["critical-section"] }
 
-zkvm-interface = { path = "../zkvm-interface" }
+zkvm-interface = { path = "../zisk/zkvm-interface" }
 
 [patch.crates-io]
 alloy-consensus         = { git = "https://github.com/portable-atomic-patches/alloy", tag = "v2.0.0" }
