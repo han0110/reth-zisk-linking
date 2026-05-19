@@ -2,8 +2,8 @@
 
 ## Reth
 
-- Implement `revm::precompile::Crypto` by [`zkvm_accelerators.h`](./zkvm-interface/zkvm_accelerators.h) ([spec](https://github.com/eth-act/zkvm-standards/blob/main/standards/c-interface-accelerators/README.md))
-- Implement IO by [`zkvm_io.h`](./zkvm-interface/zkvm_io.h) ([spec](https://github.com/eth-act/zkvm-standards/blob/main/standards/io-interface/README.md))
+- Implement `revm::precompile::Crypto` by [`zkvm_accelerators.h`](./zisk/zkvm-interface/zkvm_accelerators.h) ([spec](https://github.com/eth-act/zkvm-standards/blob/main/standards/c-interface-accelerators/README.md))
+- Implement IO by [`zkvm_io.h`](./zisk/zkvm-interface/zkvm_io.h) ([spec](https://github.com/eth-act/zkvm-standards/blob/main/standards/io-interface/README.md))
 - Patch all underlying `alloc::sync::Arc` to use `portable_atomic_util::Arc` ([note](https://hackmd.io/@han/compile-reth-ro-rv64im))
 - Compile as a static library targeting `riscv64im-unknown-none-elf`
 
