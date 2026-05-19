@@ -1,0 +1,77 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            reth
+            test
+            zisk
+
+      - name: install ziskemu build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xz-utils \
+            jq \
+            curl \
+            build-essential \
+            qemu-system \
+            libomp-dev \
+            libgmp-dev \
+            nlohmann-json3-dev \
+            protobuf-compiler \
+            uuid-dev \
+            libgrpc++-dev \
+            libsecp256k1-dev \
+            libsodium-dev \
+            libpqxx-dev \
+            nasm \
+            libopenmpi-dev \
+            openmpi-bin \
+            openmpi-common \
+            libclang-dev \
+            clang \
+            gcc-riscv64-unknown-elf \
+            libprotobuf-dev
+
+      - name: build ziskemu
+        run: cargo build --release --manifest-path zisk/emulator/Cargo.toml --bin ziskemu
+
+      - name: make
+        run: make
+
+      - name: build test cli
+        run: cargo build --release --manifest-path test/Cargo.toml
+
+      - name: cache fixtures tarball
+        uses: actions/cache@v4
+        with:
+          path: fixtures.tar.zst
+          key: fixtures-${{ hashFiles('download-fixtures.sh') }}
+
+      - name: download fixtures
+        run: ./download-fixtures.sh
+
+      - name: run test
+        env:
+          RAYON_NUM_THREADS: 1
+        run: |
+          export PATH="$PWD/zisk/target/release:$PATH"
+          ./test/target/release/reth-zisk-test --elf-path ./reth-zisk.elf --input-dir ./fixtures

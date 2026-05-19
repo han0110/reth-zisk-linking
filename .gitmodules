@@ -1,0 +1,4 @@
+[submodule "zisk"]
+	path = zisk
+	url = https://github.com/han0110/zisk.git
+	branch = feature/ziskos-staticlib-to-rv64im
