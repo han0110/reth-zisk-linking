@@ -7,7 +7,7 @@ use stateless::stateless_validation_with_trie;
 use tries::zeth::SparseState;
 
 use crate::{
-    crypto::ZkVMCrypto,
+    crypto::sha256_hasher,
     stateless::{
         input::StatelessValidatorRethInput, output::StatelessValidatorOutput,
         payload_to_block::new_payload_request_to_block,
@@ -27,7 +27,7 @@ pub fn compute(input: &[u8]) -> [u8; 32] {
 }
 
 pub fn compute_inner(input: StatelessValidatorRethInput) -> StatelessValidatorOutput {
-    let new_payload_request_root = input.new_payload_request.tree_hash_root(&ZkVMCrypto);
+    let new_payload_request_root = input.new_payload_request.tree_hash_root(&sha256_hasher());
 
     let genesis = Genesis {
         config: input.chain_config.clone(),
