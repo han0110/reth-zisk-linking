@@ -1,0 +1,21 @@
+[package]
+name = "test"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+hex-literal = "0.4"
+zkvm-interface = { path = "../zisk/zkvm-interface" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+panic = "abort"
+debug = false
+codegen-units = 1

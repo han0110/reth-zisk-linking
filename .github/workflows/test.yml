@@ -33,22 +33,25 @@ jobs:
             | tar -xz -C "$HOME/.zisk" ./bin/ziskemu
           echo "$HOME/.zisk/bin" >> "$GITHUB_PATH"
 
-      - name: make
+      - name: Make
         run: make
 
-      - name: build reth-test cli
+      - name: Run test-zisk
+        run: ziskemu --elf test-zisk.elf 
+
+      - name: Build reth-test cli
         run: cargo build --release --manifest-path reth-test/Cargo.toml
 
-      - name: cache fixtures tarball
+      - name: Cache fixtures tarball
         uses: actions/cache@v4
         with:
           path: fixtures.tar.zst
           key: fixtures-${{ hashFiles('download-fixtures.sh') }}
 
-      - name: download fixtures
+      - name: Download fixtures
         run: ./download-fixtures.sh
 
-      - name: run reth-test
+      - name: Run reth-test
         env:
           RAYON_NUM_THREADS: 1
           RUST_BACKTRACE: 1
