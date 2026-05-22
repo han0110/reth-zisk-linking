@@ -8,6 +8,8 @@ mod stateless;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn main() {
+    rt::init_alloc();
+
     crypto::install_crypto();
 
     let input: &[u8] = read_input();
