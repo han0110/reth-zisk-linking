@@ -36,8 +36,8 @@ jobs:
       - name: make
         run: make
 
-      - name: build test cli
-        run: cargo build --release --manifest-path test/Cargo.toml
+      - name: build reth-test cli
+        run: cargo build --release --manifest-path reth-test/Cargo.toml
 
       - name: cache fixtures tarball
         uses: actions/cache@v4
@@ -48,8 +48,8 @@ jobs:
       - name: download fixtures
         run: ./download-fixtures.sh
 
-      - name: run test
+      - name: run reth-test
         env:
           RAYON_NUM_THREADS: 1
           RUST_BACKTRACE: 1
-        run: ./test/target/release/test --elf-path ./reth-zisk.elf --input-dir ./fixtures
+        run: ./reth-test/target/release/reth-test --elf-path ./reth-zisk.elf --input-dir ./fixtures

@@ -1473,6 +1473,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "host"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "clap",
+ "hex",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2",
+ "stateless",
+ "stateless-validator-common",
+ "stateless-validator-reth",
+ "tempfile",
+]
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3234,24 +3252,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "test"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "clap",
- "hex",
- "rayon",
- "serde",
- "serde_json",
- "sha2",
- "stateless",
- "stateless-validator-common",
- "stateless-validator-reth",
- "tempfile",
 ]
 
 [[package]]
