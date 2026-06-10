@@ -15,7 +15,7 @@ build_test:
 	$(CARGO) --manifest-path test/Cargo.toml
 
 build_zisk:
-	RUSTFLAGS='-A explicit_builtin_cfgs_in_flags --cfg target_os="zkvm" --cfg target_vendor="zisk"' $(CARGO) --manifest-path zisk/Cargo.toml --package ziskos-staticlib
+	$(CARGO) --manifest-path zisk/Cargo.toml --package ziskos-staticlib
 
 link_reth:
 	$(LLD) -T linker.ld --gc-sections --no-eh-frame-hdr -o reth-zisk.elf --start-group $(ZISK_A) $(RETH_A) --end-group

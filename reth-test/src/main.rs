@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    env, fs,
     os::unix::process::ExitStatusExt,
     path::PathBuf,
     process::Command,
@@ -84,7 +84,11 @@ fn emulate(elf_path: &PathBuf, path: &PathBuf) -> Result<String> {
         (name, expected)
     };
 
-    let status = Command::new("ziskemu")
+    let ziskemu = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../zisk/target/release/ziskemu")
+        .canonicalize()
+        .unwrap();
+    let status = Command::new(ziskemu)
         .arg("-e")
         .arg(elf_path)
         .arg("-i")
