@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-FILE_ID=1MEt9LQuXVi6iBMGmXyPPVtp60lQa_DYs
+FILE_ID=1IoP6Q78s-OZIneVpP_ggn0L86qUeg3-d
 HERE=$(cd "$(dirname "$0")" && pwd)
 TAR="$HERE/fixtures.tar.zst"
 DIR="$HERE/fixtures"
