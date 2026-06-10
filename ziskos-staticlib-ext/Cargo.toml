@@ -1,5 +1,5 @@
 [package]
-name = "test"
+name = "ziskos-staticlib-ext"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,10 +8,6 @@ edition = "2024"
 [lib]
 path = "src/lib.rs"
 crate-type = ["staticlib"]
-
-[dependencies]
-hex-literal = "0.4"
-zkvm-interface = { path = "../zisk/zkvm-interface" }
 
 [profile.release]
 opt-level = 3

@@ -1,4 +1,4 @@
-name: Reth test
+name: Integration test
 
 on:
   push:
@@ -8,6 +8,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        el: [reth, zesu]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,7 +25,8 @@ jobs:
         with:
           workspaces: |
             reth
-            test
+            ziskos-staticlib-ext
+            integration-test
 
       - name: Install deps
         run: |
@@ -34,13 +39,10 @@ jobs:
         run: cargo build --release --bin ziskemu --manifest-path zisk/Cargo.toml
 
       - name: Make
-        run: make
+        run: make ${{ matrix.el }}
 
-      - name: Run test-zisk
-        run: ziskemu --elf test-zisk.elf 
-
-      - name: Build reth-test cli
-        run: cargo build --release --manifest-path reth-test/Cargo.toml
+      - name: Build integration-test cli
+        run: cargo build --release --manifest-path integration-test/Cargo.toml
 
       - name: Cache fixtures tarball
         uses: actions/cache@v4
@@ -51,8 +53,9 @@ jobs:
       - name: Download fixtures
         run: ./download-fixtures.sh
 
-      - name: Run reth-test
+      - name: Run integration-test
         env:
-          RAYON_NUM_THREADS: 1
           RUST_BACKTRACE: 1
-        run: ./reth-test/target/release/reth-test --elf-path ./reth-zisk.elf --input-dir ./fixtures
+        run: |
+          ./integration-test/target/release/integration-test --el ${{ matrix.el }} \
+            --elf-path ./${{ matrix.el }}-zisk.elf --input-dir ./fixtures
