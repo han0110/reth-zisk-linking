@@ -1,0 +1,62 @@
+name: Integration test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        el: [reth, zesu]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            integration-test
+            reth
+            zisk
+            ziskos-staticlib-ext
+
+      - name: Install deps
+        run: |
+          sudo apt-get install -y --no-install-recommends ca-certificates xz-utils jq curl build-essential \
+            qemu-system libomp-dev libgmp-dev nlohmann-json3-dev protobuf-compiler uuid-dev libgrpc++-dev \
+            libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev openmpi-bin openmpi-common libclang-dev \
+            clang gcc-riscv64-unknown-elf git libprotobuf-dev lld
+
+      - name: Build ziskemu
+        run: cargo build --release --bin ziskemu --manifest-path zisk/Cargo.toml
+
+      - name: Make
+        run: make ${{ matrix.el }}
+
+      - name: Build integration-test cli
+        run: cargo build --release --manifest-path integration-test/Cargo.toml
+
+      - name: Cache fixtures tarball
+        uses: actions/cache@v4
+        with:
+          path: fixtures.tar.zst
+          key: fixtures-${{ hashFiles('download-fixtures.sh') }}
+
+      - name: Download fixtures
+        run: ./download-fixtures.sh
+
+      - name: Run integration-test
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          ./integration-test/target/release/integration-test --el ${{ matrix.el }} \
+            --elf-path ./${{ matrix.el }}-zisk.elf --input-dir ./fixtures

@@ -1,4 +1,5 @@
-/* Copied from https://github.com/0xPolygonHermez/rust/blob/zisk/compiler/rustc_target/src/spec/targets/riscv64ima_zisk_zkvm_elf_linker_script.ld */
+/* Copied and modified from https://github.com/0xPolygonHermez/rust/blob/zisk/compiler/rustc_target/src/spec/targets/riscv64ima_zisk_zkvm_elf_linker_script.ld */
+/* Modification inlcudes only additional _heap_start and _heap_end */
 
 OUTPUT_FORMAT("elf64-littleriscv")
 OUTPUT_ARCH("riscv")
@@ -78,6 +79,9 @@ SECTIONS
   PROVIDE(_kernel_heap_bottom = _init_stack_top);
   PROVIDE(_kernel_heap_top = ORIGIN(ram) + LENGTH(ram) - _float_ram_data_size);
   PROVIDE(_kernel_heap_size = _kernel_heap_top - _kernel_heap_bottom);
+
+  PROVIDE(_heap_start = _kernel_heap_bottom);
+  PROVIDE(_heap_end = _kernel_heap_top);
 
   _end = .;
 }

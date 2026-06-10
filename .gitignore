@@ -1,3 +1,4 @@
 target
-reth-zisk.elf
+*.elf
 fixtures*
+zesu.rv64im.o
