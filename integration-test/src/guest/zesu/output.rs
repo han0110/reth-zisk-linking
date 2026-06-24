@@ -4,7 +4,7 @@ use libssz::SszEncode as _;
 use libssz_merkle::Sha2Hasher;
 use libssz_types::SszList;
 
-use crate::stateless_ssz::{
+use crate::guest::stateless_ssz::{
     BlobSchedule, ChainConfig, ForkActivation, ForkConfig, StatelessInput,
     StatelessValidationResult,
 };

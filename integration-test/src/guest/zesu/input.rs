@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 use libssz_types::SszList;
 use stateless_validator_reth::guest::StatelessValidatorRethInput;
 
-use crate::stateless_ssz::{
+use crate::guest::stateless_ssz::{
     BlobSchedule, ChainConfig, ExecutionWitness, ForkActivation, ForkConfig, NewPayloadRequest,
     StatelessInput,
 };

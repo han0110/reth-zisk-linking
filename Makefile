@@ -1,36 +1,94 @@
 TOOLCHAIN ?= nightly-x86_64-unknown-linux-gnu
 TARGET    := riscv64im-unknown-none-elf
-LLD       ?= ld.lld
-RETH_A    := reth/target/$(TARGET)/release/libreth.a
-ZISK_A    := zisk/target/$(TARGET)/release/libziskos_staticlib.a
-ZISK_EXT_A := ziskos-staticlib-ext/target/$(TARGET)/release/libziskos_staticlib_ext.a
-ZESU_O    ?= zesu.rv64im.o
-ZESU_O_URL := https://github.com/Consensys/zesu/releases/download/bal-devnet-7/zesu.rv64im.o
 CARGO     := rustup run $(TOOLCHAIN) cargo build --release --target $(TARGET) -Z build-std=core,alloc,compiler_builtins
+LLD       ?= ld.lld
+BUILD     := build
 
-all: reth zesu
+RETH_RUSTFLAGS := -C passes=lower-atomic # lower-atomic strips reth's fence instructions so the SP1 executor can run it.
+RETH_A     := reth/target/$(TARGET)/release/libreth.a
 
-reth: build_reth build_zisk link_reth
+ZESU_O     ?= $(BUILD)/zesu.rv64im.o
+ZESU_O_URL := https://github.com/Consensys/zesu/releases/download/bal-devnet-7/zesu.rv64im.o
 
-zesu: build_zisk build_zisk_ext link_zesu
+SP1_A      := sp1/zkevm/sdk/libzkevm.a
+SP1_LD     := lds/sp1.ld
 
-build_zisk:
-	$(CARGO) --manifest-path zisk/Cargo.toml --package ziskos-staticlib
+ZISK_A     := zisk/target/$(TARGET)/release/libziskos_staticlib.a
+ZISK_LD    := lds/zisk.ld
 
-build_zisk_ext:
-	$(CARGO) --manifest-path ziskos-staticlib-ext/Cargo.toml
+ZISK_ZESU_SHIM := shim/target/$(TARGET)/release/libzisk_zesu_shim.a
+SP1_ZESU_SHIM  := shim/target/$(TARGET)/release/libsp1_zesu_shim.a
+SP1_RETH_SHIM  := shim/target/$(TARGET)/release/libsp1_reth_shim.a
 
-build_reth:
-	$(CARGO) --manifest-path reth/Cargo.toml
+all: reth_sp1 zesu_sp1 reth_zisk zesu_zisk
 
-link_reth:
-	$(LLD) -T linker.ld --gc-sections --no-eh-frame-hdr -o reth-zisk.elf --start-group $(ZISK_A) $(RETH_A) --end-group
+reth_sp1:  $(BUILD)/reth-sp1.elf
 
-$(ZESU_O):
+zesu_sp1:  $(BUILD)/zesu-sp1.elf
+
+reth_zisk: $(BUILD)/reth-zisk.elf
+
+zesu_zisk: $(BUILD)/zesu-zisk.elf
+
+clean:
+	rm -rf $(BUILD)
+	rm -f $(RETH_A) $(ZISK_A) $(SP1_A) $(SP1_RETH_SHIM) $(SP1_ZESU_SHIM) $(ZISK_ZESU_SHIM)
+
+# Guest lib
+
+$(RETH_A):
+	RUSTFLAGS="$(RETH_RUSTFLAGS)" $(CARGO) --manifest-path reth/Cargo.toml
+
+$(ZESU_O): | $(BUILD)
 	curl -fL -o $@ $(ZESU_O_URL)
 
-link_zesu: build_zisk_ext $(ZESU_O)
-	$(LLD) -T linker.ld --gc-sections --no-eh-frame-hdr \
-		-o zesu-zisk.elf --start-group $(ZISK_A) $(ZISK_EXT_A) $(ZESU_O) --end-group
+# zkVM lib
 
-.PHONY: all reth zesu build_zisk build_zisk_ext build_reth link_reth link_zesu
+$(ZISK_A):
+	$(CARGO) --manifest-path zisk/Cargo.toml --package ziskos-staticlib
+
+$(SP1_A):
+	$(MAKE) -C sp1/zkevm sdk
+
+# Shim lib
+
+$(SP1_RETH_SHIM) $(SP1_ZESU_SHIM) $(ZISK_ZESU_SHIM) &:
+	$(CARGO) --manifest-path shim/Cargo.toml
+
+# Link
+
+$(BUILD):
+	mkdir -p $(BUILD)
+
+$(BUILD)/reth-zisk.elf: $(ZISK_A) $(RETH_A) | $(BUILD)
+	$(LLD) -T $(ZISK_LD) --gc-sections --no-eh-frame-hdr \
+		-o $@ --start-group $(ZISK_A) $(RETH_A) --end-group
+
+$(BUILD)/zesu-zisk.elf: $(ZISK_A) $(ZISK_ZESU_SHIM) $(ZESU_O) | $(BUILD)
+	$(LLD) -T $(ZISK_LD) --gc-sections --no-eh-frame-hdr \
+		-o $@ --start-group $(ZISK_A) $(ZISK_ZESU_SHIM) $(ZESU_O) --end-group
+
+$(BUILD)/reth-sp1.elf: $(SP1_A) $(RETH_A) $(SP1_RETH_SHIM) | $(BUILD)
+	$(LLD) -T $(SP1_LD) --gc-sections --no-eh-frame-hdr --allow-multiple-definition \
+		-o $@ --start-group $(SP1_A) $(RETH_A) $(SP1_RETH_SHIM) --end-group
+
+$(BUILD)/zesu-sp1.elf: $(SP1_A) $(SP1_ZESU_SHIM) $(ZESU_O) | $(BUILD)
+	$(LLD) -T $(SP1_LD) --gc-sections --no-eh-frame-hdr --allow-multiple-definition \
+		-o $@ --start-group $(SP1_A) $(SP1_ZESU_SHIM) $(ZESU_O) --end-group
+
+# Test
+
+test_sp1_reth:
+	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm sp1 --el reth
+
+test_sp1_zesu:
+	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm sp1 --el zesu
+
+test_zisk_reth:
+	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm zisk --el reth
+
+test_zisk_zesu:
+	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm zisk --el zesu
+
+.PHONY: all reth_sp1 zesu_sp1 reth_zisk zesu_zisk clean \
+	test_sp1_reth test_sp1_zesu test_zisk_reth test_zisk_zesu

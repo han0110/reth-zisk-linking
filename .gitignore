@@ -2,3 +2,6 @@ target
 *.elf
 fixtures*
 zesu.rv64im.o
+/build/
+/tmp/
+target-nofence

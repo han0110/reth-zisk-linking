@@ -1,7 +1,7 @@
 [package]
+edition = "2024"
 name = "integration-test"
 version = "0.1.0"
-edition = "2024"
 
 [workspace]
 
@@ -10,11 +10,11 @@ anyhow = "1.0"
 bincode = { version = "2.0.1", features = ["alloc", "serde"] }
 clap = { version = "4.6.0", features = ["derive"] }
 hex = "0.4"
-rayon = "1.10"
+rayon = "1"
+crossbeam-channel = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
-tempfile = "3.6"
 
 libssz = "0.2.2"
 libssz-derive = "0.2.2"
@@ -28,3 +28,8 @@ stateless = { git = "https://github.com/paradigmxyz/stateless", rev = "e5480e71a
 
 stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.10.0", features = ["host"] }
 stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.10.0", features = ["host"] }
+
+sp1-core-executor = "6.3.0"
+
+zisk-core = { git = "https://github.com/han0110/zisk.git", rev = "ef15793a3b5907d140f4f23a11d2be819cb49161" }
+ziskemu = { git = "https://github.com/han0110/zisk.git", rev = "ef15793a3b5907d140f4f23a11d2be819cb49161" }

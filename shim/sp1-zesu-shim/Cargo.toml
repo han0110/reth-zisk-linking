@@ -1,0 +1,9 @@
+[package]
+name = "sp1-zesu-shim"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+# rlib so sp1-reth-shim can reuse this surface; staticlib for the zesu link.
+crate-type = ["staticlib", "rlib"]

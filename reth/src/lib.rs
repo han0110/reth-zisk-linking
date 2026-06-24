@@ -7,7 +7,7 @@ mod rt;
 mod stateless;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn main() {
+pub extern "C" fn main() -> i32 {
     rt::init_alloc();
 
     crypto::install_crypto();
@@ -15,6 +15,11 @@ pub extern "C" fn main() {
     let input: &[u8] = read_input();
     let output = stateless::compute(input);
     write_output(&output);
+
+    // SP1's __start forwards this value to syscall_halt as the exit code per the
+    // eth-act standard-termination spec. ZisK ignores the return value, so 0 is
+    // safe for both runtimes.
+    0
 }
 
 pub fn read_input() -> &'static [u8] {
