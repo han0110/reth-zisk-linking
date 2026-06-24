@@ -47,12 +47,7 @@ jobs:
           ~/.sp1/bin/sp1up
 
       - name: Build guest
-        run: |
-          if [ "${{ matrix.zkvm }}" = "sp1" ]; then
-            make ${{ matrix.el }}-sp1
-          else
-            make ${{ matrix.el }}
-          fi
+        run: make ${{ matrix.el }}_${{ matrix.zkvm }}
 
       - name: Build integration-test cli
         run: cargo build --release --manifest-path integration-test/Cargo.toml
