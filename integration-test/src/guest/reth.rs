@@ -1,17 +1,13 @@
 use anyhow::Result;
+use reth_stateless::StatelessInput;
 use sha2::{Digest, Sha256};
-use stateless::StatelessInput;
-use stateless_validator_reth::guest::{
-    StatelessValidatorOutput, StatelessValidatorRethInput, new_payload_request::NativeSha256Hasher,
-};
 
-/// Returns input and expected output.
-pub fn io(stateless_input: &StatelessInput, success: bool) -> Result<(Vec<u8>, Vec<u8>)> {
-    let input = StatelessValidatorRethInput::new(stateless_input, success)?;
-    let root = input
-        .new_payload_request
-        .tree_hash_root(&NativeSha256Hasher);
-    let input = bincode::serde::encode_to_vec(&input, bincode::config::legacy())?;
-    let expected_output = Sha256::digest(StatelessValidatorOutput::new(root, success).serialize());
-    Ok((input, expected_output.to_vec()))
+use crate::guest::canonical_io;
+
+/// Returns canonical input and expected output. The reth guest entrypoint writes
+/// the sha256 digest of the canonical output bytes, since some zkVMs cap public
+/// values at 32 bytes.
+pub fn io(input: &StatelessInput, success: bool) -> Result<(Vec<u8>, Vec<u8>)> {
+    let (input_bytes, output_bytes) = canonical_io(input, success)?;
+    Ok((input_bytes, Sha256::digest(output_bytes).to_vec()))
 }

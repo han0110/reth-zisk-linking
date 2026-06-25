@@ -4,11 +4,22 @@ CARGO     := rustup run $(TOOLCHAIN) cargo build --release --target $(TARGET) -Z
 LLD       ?= ld.lld
 BUILD     := build
 
+# reth pulls the unpatched ere-guests stack, whose Arc/atomics require a target
+# that advertises atomic support. The custom spec sets max-atomic-width=64 so the
+# code compiles, and lower-atomic then lowers those atomics to single-core memory
+# ops, leaving no atomic instructions in the linked object.
+RETH_TARGET := reth/targets/$(TARGET).json
+RETH_CARGO  := rustup run $(TOOLCHAIN) cargo build --release --target $(RETH_TARGET) -Z build-std=core,alloc,compiler_builtins -Z json-target-spec
+
 RETH_RUSTFLAGS := -C passes=lower-atomic # lower-atomic strips reth's fence instructions so the SP1 executor can run it.
 RETH_A     := reth/target/$(TARGET)/release/libreth.a
 
 ZESU_O     ?= $(BUILD)/zesu.rv64im.o
-ZESU_O_URL := https://github.com/Consensys/zesu/releases/download/bal-devnet-7/zesu.rv64im.o
+ZESU_O_URL := https://github.com/Consensys/zesu/releases/download/bal-devnet-7-2026-06-24/zesu.rv64im.o
+
+# Prebuilt Nethermind guest ELF (requires ZisK v1.0.0-alpha), emulated directly.
+NETHERMIND_ELF := $(BUILD)/nethermind-zisk.elf
+NETHERMIND_URL := https://github.com/NethermindEth/nethermind/releases/download/zisk-guest-r7/nethermind-guest-zisk-r7.tar.gz
 
 SP1_A      := sp1/zkevm/sdk/libzkevm.a
 SP1_LD     := lds/sp1.ld
@@ -30,6 +41,8 @@ reth_zisk: $(BUILD)/reth-zisk.elf
 
 zesu_zisk: $(BUILD)/zesu-zisk.elf
 
+nethermind_zisk: $(NETHERMIND_ELF)
+
 clean:
 	rm -rf $(BUILD)
 	rm -f $(RETH_A) $(ZISK_A) $(SP1_A) $(SP1_RETH_SHIM) $(SP1_ZESU_SHIM) $(ZISK_ZESU_SHIM)
@@ -37,10 +50,13 @@ clean:
 # Guest lib
 
 $(RETH_A):
-	RUSTFLAGS="$(RETH_RUSTFLAGS)" $(CARGO) --manifest-path reth/Cargo.toml
+	RUSTFLAGS="$(RETH_RUSTFLAGS)" $(RETH_CARGO) --manifest-path reth/Cargo.toml
 
 $(ZESU_O): | $(BUILD)
 	curl -fL -o $@ $(ZESU_O_URL)
+
+$(NETHERMIND_ELF): | $(BUILD)
+	curl -fL $(NETHERMIND_URL) | tar -xzO nethermind > $@
 
 # zkVM lib
 
@@ -90,5 +106,8 @@ test_zisk_reth:
 test_zisk_zesu:
 	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm zisk --el zesu
 
-.PHONY: all reth_sp1 zesu_sp1 reth_zisk zesu_zisk clean \
-	test_sp1_reth test_sp1_zesu test_zisk_reth test_zisk_zesu
+test_zisk_nethermind: $(NETHERMIND_ELF)
+	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm zisk --el nethermind
+
+.PHONY: all reth_sp1 zesu_sp1 reth_zisk zesu_zisk nethermind_zisk clean \
+	test_sp1_reth test_sp1_zesu test_zisk_reth test_zisk_zesu test_zisk_nethermind

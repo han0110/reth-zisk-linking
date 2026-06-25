@@ -15,8 +15,8 @@ use std::{
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use rayon::prelude::*;
+use reth_stateless::StatelessInput;
 use serde::Deserialize;
-use stateless::StatelessInput;
 
 use crate::{
     guest::Guest,
@@ -58,6 +58,9 @@ fn repo_path(relative: &str) -> PathBuf {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    if args.el == Guest::Nethermind && !matches!(args.zkvm, Zkvm::Zisk) {
+        bail!("--el nethermind is a ZisK guest ELF and is only supported with --zkvm zisk");
+    }
     let elf_path = args.elf_path.clone().unwrap_or_else(|| {
         repo_path(&format!("build/{}-{}.elf", args.el.as_str(), args.zkvm.as_str()))
     });
