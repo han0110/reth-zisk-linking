@@ -15,10 +15,10 @@ jobs:
       fail-fast: false
       matrix:
         zkvm: [zisk, sp1]
-        el: [reth, zesu]
-        # Nethermind ships a prebuilt ZisK guest ELF only, so it runs on ZisK alone.
-        include:
-          - zkvm: zisk
+        el: [nethermind, reth, zesu]
+        fixture: [rpc-bpo2, eest-glamsterdam-devnet-5]
+        exclude:
+          - zkvm: sp1
             el: nethermind
     steps:
       - uses: actions/checkout@v4
@@ -56,19 +56,24 @@ jobs:
       - name: Build integration-test cli
         run: cargo build --release --manifest-path integration-test/Cargo.toml
 
-      - name: Cache fixtures tarball
+      - name: Cache fixture archives
         uses: actions/cache@v4
         with:
-          path: fixtures.tar.zst
+          path: |
+            rpc-bpo2.tar.zst
+            fixtures_zkevm.tar.gz
           key: fixtures-${{ hashFiles('download-fixtures.sh') }}
 
       - name: Download fixtures
-        run: ./download-fixtures.sh
+        run: |
+          ./download-fixtures.sh ${{ matrix.fixture }}
 
       - name: Run integration-test
         env:
           RUST_BACKTRACE: 1
         run: |
+          FIXTURE="${{ matrix.fixture }}"
           ./integration-test/target/release/integration-test \
             --zkvm ${{ matrix.zkvm }} --el ${{ matrix.el }} \
-            --elf-path ./build/${{ matrix.el }}-${{ matrix.zkvm }}.elf --input-dir ./fixtures
+            --elf-path ./build/${{ matrix.el }}-${{ matrix.zkvm }}.elf \
+            --input-dir "./fixtures${FIXTURE:+/$FIXTURE}"

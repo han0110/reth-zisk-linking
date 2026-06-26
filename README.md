@@ -43,15 +43,38 @@ plus `shim/sp1-reth-shim`, since libzkevm also exports the zkvm-standards C ABI.
 
 ## Integration tests (`integration-test/`)
 
-`cargo run -- --zkvm <zisk|sp1> --el <reth|zesu|nethermind>` builds the canonical
-input from each fixture (`StatelessInput::try_from_reth` -> `to_schema_prefixed_ssz`),
-runs it through the selected guest on the selected backend in-process, and compares the
-committed output. reth output is compared as the full sha256 digest; zesu and nethermind
-are compared on the `new_payload_request_root` + `successful_validation` prefix, since
-those guests emit their own chain config in the output tail.
+`cargo run -- --zkvm <zisk|sp1> --el <reth|zesu|nethermind>` normalizes each fixture to
+canonical schema-prefixed SSZ input bytes and the canonical SSZ
+`StatelessValidationResult` output bytes, runs the input through the selected guest on
+the selected backend in-process, and compares the committed output. reth output is
+compared as the full sha256 digest; zesu and nethermind are compared on the
+`new_payload_request_root` + `successful_validation` prefix, since those guests emit
+their own chain config in the output tail.
+
+Fixture layouts are auto-detected per file, and directories are searched recursively
+(so `--input-dir` can point at one fixture set or at `fixtures/` to run several). The
+RPC fixtures carry top-level `statelessInputBytes`/`statelessOutputBytes` in `.json.zst`
+files; the EEST fixtures carry the same fields per block; a legacy layout carrying a
+reth `StatelessInput` struct is converted through the host bridge
+(`StatelessInput::try_from_reth` -> `to_schema_prefixed_ssz`).
 
 Targets: `make test_zisk_reth`, `test_sp1_reth`, `test_zisk_zesu`, `test_sp1_zesu`,
-`test_zisk_nethermind`.
+`test_zisk_nethermind`. Download a fixture set first.
+
+### Fixture sets
+
+`./download-fixtures.sh <name>` fetches a set into `fixtures/<name>`.
+
+- `rpc-bpo2` pulls the `han0110/ere-guests`
+  [`rpc-fixtures@v0.1.0`](https://github.com/han0110/ere-guests/releases/tag/rpc-fixtures@v0.1.0)
+  RPC-derived mainnet blocks.
+- `eest-glamsterdam-devnet-5` pulls the `ethereum/execution-specs`
+  [`tests-zkevm@v0.4.1`](https://github.com/ethereum/execution-specs/releases/tag/tests-zkevm@v0.4.1)
+  `blockchain_test` set, 23264 blocks all schema `0x0001`, so reth, zesu, and nethermind
+  consume them without translation.
+
+The CI matrix runs `{zisk, sp1} x {reth, zesu} x {rpc-bpo2, eest-glamsterdam-devnet-5}`,
+plus nethermind on ZisK over both sets.
 
 ### Nethermind guest (`--el nethermind`, ZisK only)
 

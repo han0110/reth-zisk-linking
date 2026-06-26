@@ -14,20 +14,15 @@ crossbeam-channel = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
+walkdir = "2"
+zstd = "0.13"
 
-# Canonical types + the legacy host bridge (StatelessInput::try_from_reth) from
-# the ere-guests canonical branch.
-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", branch = "han/feature/canonical-stateless-input", features = ["legacy"] }
-
-# Fixture input type, matching the ere-guests canonical reth-stateless pin.
-reth-stateless = { git = "https://github.com/han0110/stateless", branch = "feature/v2.3.0", package = "stateless" }
+# Canonical guest types from the ere-guests canonical branch (the nethermind IO
+# module re-parses input via StatelessInput::from_schema_prefixed_ssz).
+stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", branch = "han/feature/canonical-stateless-input" }
 
 sp1-core-executor = "6.3.0"
 
 zisk-core = { git = "https://github.com/0xPolygonHermez/zisk", tag = "v1.0.0-alpha" }
 ziskemu = { git = "https://github.com/0xPolygonHermez/zisk", tag = "v1.0.0-alpha" }
 
-# ziskemu pins time to exactly 0.3.47 (a preventive pin for the rcgen/quic path,
-# which this binary never compiles). reth v2.3.0's serde_with accepts ~0.3.47, so
-# pinning the shared resolution to 0.3.47 satisfies both trees.
-time = "=0.3.47"

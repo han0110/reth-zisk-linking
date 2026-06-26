@@ -109,5 +109,8 @@ test_zisk_zesu:
 test_zisk_nethermind: $(NETHERMIND_ELF)
 	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm zisk --el nethermind
 
+# Test targets read ./fixtures (searched recursively). Download a set first with
+# ./download-fixtures.sh {rpc-bpo2|eest-glamsterdam-devnet-5}.
+
 .PHONY: all reth_sp1 zesu_sp1 reth_zisk zesu_zisk nethermind_zisk clean \
 	test_sp1_reth test_sp1_zesu test_zisk_reth test_zisk_zesu test_zisk_nethermind
