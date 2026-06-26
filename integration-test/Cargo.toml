@@ -21,7 +21,7 @@ zstd = "0.13"
 # module re-parses input via StatelessInput::from_schema_prefixed_ssz).
 stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", branch = "han/feature/canonical-stateless-input" }
 
-sp1-core-executor = "6.3.0"
+sp1-core-executor = "6.3.1"
 
 zisk-core = { git = "https://github.com/0xPolygonHermez/zisk", tag = "v1.0.0-alpha" }
 ziskemu = { git = "https://github.com/0xPolygonHermez/zisk", tag = "v1.0.0-alpha" }

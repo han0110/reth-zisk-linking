@@ -6,4 +6,3 @@ report.md
 zesu.rv64im.o
 /build/
 /tmp/
-target-nofence

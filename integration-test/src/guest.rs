@@ -24,9 +24,8 @@ impl Guest {
         }
     }
 
-    /// Builds the guest input and the natively computed expected output for a
-    /// fixture, transforming the fixture's canonical bytes for the guest's wire
-    /// format and output convention.
+    /// Builds the guest input and natively computed expected output, transforming
+    /// the fixture's canonical bytes for the guest's wire format and output convention.
     pub fn io(self, fixture: &Fixture) -> Result<(Vec<u8>, Vec<u8>)> {
         match self {
             Self::Reth => reth::io(fixture),

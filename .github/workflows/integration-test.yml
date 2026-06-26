@@ -77,10 +77,6 @@ jobs:
             --input-dir ./fixtures/${{ matrix.fixture }} \
             --report ./report.md > /dev/null 2>&1
           status=$?
-          # Print only the report; mirror it into the job summary; keep the run's exit code.
-          if [ -f report.md ]; then
-            cat report.md | tee -a "$GITHUB_STEP_SUMMARY"
-          else
-            echo "integration-test produced no report (crashed)" | tee -a "$GITHUB_STEP_SUMMARY"
-          fi
+          # Print only the report, mirror it into the job summary, and keep the run's exit code.
+          { cat report.md 2>/dev/null || echo "integration-test produced no report (crashed)"; } | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"

@@ -4,14 +4,12 @@ CARGO     := rustup run $(TOOLCHAIN) cargo build --release --target $(TARGET) -Z
 LLD       ?= ld.lld
 BUILD     := build
 
-# reth pulls the unpatched ere-guests stack, whose Arc/atomics require a target
-# that advertises atomic support. The custom spec sets max-atomic-width=64 so the
-# code compiles, and lower-atomic then lowers those atomics to single-core memory
-# ops, leaving no atomic instructions in the linked object.
+# reth's Arc/atomics need a target that advertises atomic support, so the custom
+# spec sets max-atomic-width=64 to compile and lower-atomic then strips all atomics.
 RETH_TARGET := reth/targets/$(TARGET).json
 RETH_CARGO  := rustup run $(TOOLCHAIN) cargo build --release --target $(RETH_TARGET) -Z build-std=core,alloc,compiler_builtins -Z json-target-spec
 
-RETH_RUSTFLAGS := -C passes=lower-atomic # lower-atomic strips reth's fence instructions so the SP1 executor can run it.
+RETH_RUSTFLAGS := -C passes=lower-atomic
 RETH_A     := reth/target/$(TARGET)/release/libreth.a
 
 ZESU_O     ?= $(BUILD)/zesu.rv64im.o
@@ -34,13 +32,9 @@ SP1_RETH_SHIM  := shim/target/$(TARGET)/release/libsp1_reth_shim.a
 all: reth_sp1 zesu_sp1 reth_zisk zesu_zisk
 
 reth_sp1:  $(BUILD)/reth-sp1.elf
-
 zesu_sp1:  $(BUILD)/zesu-sp1.elf
-
 reth_zisk: $(BUILD)/reth-zisk.elf
-
 zesu_zisk: $(BUILD)/zesu-zisk.elf
-
 nethermind_zisk: $(NETHERMIND_ELF)
 
 clean:
@@ -94,20 +88,13 @@ $(BUILD)/zesu-sp1.elf: $(SP1_A) $(SP1_ZESU_SHIM) $(ZESU_O) | $(BUILD)
 
 # Test
 
-test_sp1_reth:
-	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm sp1 --el reth
+RUN_TEST := cargo run --release --manifest-path integration-test/Cargo.toml --
 
-test_sp1_zesu:
-	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm sp1 --el zesu
-
-test_zisk_reth:
-	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm zisk --el reth
-
-test_zisk_zesu:
-	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm zisk --el zesu
-
-test_zisk_nethermind: $(NETHERMIND_ELF)
-	cargo run --release --manifest-path integration-test/Cargo.toml -- --zkvm zisk --el nethermind
+test_sp1_reth:        ; $(RUN_TEST) --zkvm sp1 --el reth
+test_sp1_zesu:        ; $(RUN_TEST) --zkvm sp1 --el zesu
+test_zisk_reth:       ; $(RUN_TEST) --zkvm zisk --el reth
+test_zisk_zesu:       ; $(RUN_TEST) --zkvm zisk --el zesu
+test_zisk_nethermind: $(NETHERMIND_ELF) ; $(RUN_TEST) --zkvm zisk --el nethermind
 
 # Test targets read ./fixtures (searched recursively). Download a set first with
 # ./download-fixtures.sh {rpc-bpo2|eest-glamsterdam-devnet-5}.
