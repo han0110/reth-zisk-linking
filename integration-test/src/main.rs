@@ -1,120 +1,151 @@
-//! Fixture driven end to end tests for execution layer guests linked against
-//! the ZisK runtime.
+//! Fixture-driven tests for EL guests across zkVM backends.
 //!
-//! Each fixture under the input directory holds a reth StatelessInput
-//! together with the expected validation verdict. The fixture is converted
-//! into the guest input format selected by the --el flag, wrapped in the
-//! ZisK length prefixed stdin framing, and executed on ziskemu against the
-//! linked guest ELF. The emulated public output is compared against the
-//! expected bytes computed natively.
+//! Each fixture is normalized to canonical SSZ input/output bytes, converted to
+//! the selected guest's wire format, executed on the selected backend, and the
+//! committed output is compared against the expected bytes. Choose the backend
+//! with --zkvm and the guest with --el.
 
-mod reth;
-mod stateless_ssz;
-mod zesu;
+mod fixture;
+mod guest;
+mod zkvm;
 
 use std::{
     fs,
-    os::unix::process::ExitStatusExt,
     path::{Path, PathBuf},
-    process::Command,
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
-use anyhow::{Result, bail};
-use clap::{Parser, ValueEnum};
+use anyhow::{Context, Result, bail};
+use clap::Parser;
 use rayon::prelude::*;
-use serde::Deserialize;
-use stateless::StatelessInput;
+use walkdir::WalkDir;
 
-/// Execution layer guest under test.
-#[derive(Clone, Copy, ValueEnum)]
-enum El {
-    Reth,
-    Zesu,
-}
-
-impl El {
-    fn elf_name(self) -> &'static str {
-        match self {
-            Self::Reth => "reth-zisk.elf",
-            Self::Zesu => "zesu-zisk.elf",
-        }
-    }
-}
+use crate::{
+    fixture::Fixture,
+    guest::Guest,
+    zkvm::{Executor, Zkvm},
+};
 
 #[derive(Parser)]
 struct Args {
+    /// zkVM backend under test.
+    #[arg(long, value_enum)]
+    zkvm: Zkvm,
     /// Execution layer guest under test.
     #[arg(long, value_enum)]
-    el: El,
-    /// Guest ELF to emulate, defaults to the linked ELF of the selected
-    /// guest at the repository root.
+    el: Guest,
+    /// Guest ELF, defaults to build/<el>-<zkvm>.elf.
     #[arg(long)]
     elf_path: Option<PathBuf>,
-    /// Directory of fixture json files, defaults to fixtures at the
-    /// repository root.
+    /// Directory of fixture json files (searched recursively), defaults to fixtures.
     #[arg(long)]
     input_dir: Option<PathBuf>,
-    /// ziskemu binary, defaults to the release build in the zisk submodule.
-    #[arg(long)]
-    ziskemu: Option<PathBuf>,
-    /// Substring filter on fixture file names.
+    /// Substring filter on fixture file paths.
     #[arg(long)]
     filter: Option<String>,
+    /// Cap the number of fixtures executed.
+    #[arg(long)]
+    limit: Option<usize>,
+    /// Write a markdown pass/fail report to this path.
+    #[arg(long)]
+    report: Option<PathBuf>,
 }
 
 fn repo_path(relative: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join(relative)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(relative)
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let elf_path = args
-        .elf_path
-        .unwrap_or_else(|| repo_path(args.el.elf_name()));
-    let input_dir = args.input_dir.unwrap_or_else(|| repo_path("fixtures"));
-    let ziskemu = args
-        .ziskemu
-        .unwrap_or_else(|| repo_path("zisk/target/release/ziskemu"))
-        .canonicalize()?;
+    if args.el == Guest::Nethermind && !matches!(args.zkvm, Zkvm::Zisk) {
+        bail!("--el nethermind is a ZisK guest ELF and is only supported with --zkvm zisk");
+    }
+    let elf_path = args.elf_path.clone().unwrap_or_else(|| {
+        repo_path(&format!("build/{}-{}.elf", args.el.as_str(), args.zkvm.as_str()))
+    });
+    let input_dir = args.input_dir.clone().unwrap_or_else(|| repo_path("fixtures"));
 
-    let mut paths = fs::read_dir(&input_dir)?
-        .filter_map(|result| result.ok().map(|file| file.path()))
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
+    let elf = fs::read(&elf_path).with_context(|| format!("read elf {}", elf_path.display()))?;
+    println!(
+        "zkvm={} el={} elf={} ({} bytes)",
+        args.zkvm.as_str(),
+        args.el.as_str(),
+        elf_path.display(),
+        elf.len()
+    );
+
+    // Discover fixture files recursively so nested EEST trees are picked up.
+    let mut files = WalkDir::new(&input_dir)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .map(walkdir::DirEntry::into_path)
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".json") || name.ends_with(".json.zst"))
+        })
         .filter(|path| match &args.filter {
-            Some(needle) => path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .is_some_and(|name| name.contains(needle)),
+            Some(needle) => path.to_string_lossy().contains(needle.as_str()),
             None => true,
         })
         .collect::<Vec<_>>();
-    paths.sort();
-    if paths.is_empty() {
+    files.sort();
+    if files.is_empty() {
         bail!("no *.json fixtures in {}", input_dir.display());
     }
 
-    let total = paths.len();
-    let done = AtomicUsize::new(0);
-    let failures = paths
-        .par_iter()
-        .filter_map(|path| {
-            let result = emulate(args.el, &elf_path, &ziskemu, path);
-            let done = done.fetch_add(1, Ordering::Relaxed) + 1;
-            match result {
-                Ok(name) => {
-                    println!("[{done}/{total}] {name}");
-                    None
+    // Load and normalize every fixture, reporting unparseable files rather than
+    // silently dropping them. Sorted by name for deterministic numbering.
+    let loaded: Vec<Result<Vec<Fixture>>> =
+        files.par_iter().map(|path| fixture::load(path)).collect();
+    let mut fixtures = Vec::new();
+    let mut load_errors = 0usize;
+    for result in loaded {
+        match result {
+            Ok(mut batch) => fixtures.append(&mut batch),
+            Err(err) => {
+                if load_errors < 10 {
+                    eprintln!("skip unparseable fixture: {err:?}");
                 }
-                Err(error) => {
-                    println!("[{done}/{total}] FAILED {}\n{error}", path.display());
-                    Some(path)
-                }
+                load_errors += 1;
             }
-        })
-        .collect::<Vec<_>>();
+        }
+    }
+    if load_errors != 0 {
+        eprintln!("skipped {load_errors} unparseable fixture file(s)");
+    }
+    fixtures.sort_by(|a, b| a.name.cmp(&b.name));
+    if let Some(limit) = args.limit {
+        fixtures.truncate(limit);
+    }
+    if fixtures.is_empty() {
+        bail!("no fixtures parsed from {}", input_dir.display());
+    }
+
+    let executor = Executor::new(args.zkvm, &elf)?;
+    let total = fixtures.len();
+    let results: Vec<(String, Option<String>)> = fixtures
+        .par_iter()
+        .map(|fixture| run_fixture(fixture, args.el, &executor))
+        .collect();
+
+    let mut failures: Vec<(&str, &str)> = Vec::new();
+    for (index, (name, error)) in results.iter().enumerate() {
+        match error {
+            None => println!("[{}/{total}] {name}", index + 1),
+            Some(message) => {
+                println!("[{}/{total}] FAILED {name}: {message}", index + 1);
+                failures.push((name, message));
+            }
+        }
+    }
+
+    // The report is written before bailing, so it exists even on failure.
+    if let Some(report_path) = &args.report {
+        fs::write(report_path, render_report(&args, &input_dir, total, &failures))
+            .with_context(|| format!("write report {}", report_path.display()))?;
+        println!("wrote report to {}", report_path.display());
+    }
 
     if !failures.is_empty() {
         bail!("{} of {total} fixtures failed", failures.len());
@@ -123,71 +154,56 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[derive(Deserialize)]
-struct StatelessValidatorFixture {
-    name: String,
-    stateless_input: StatelessInput,
-    success: bool,
+/// Runs one fixture, returning its name and an error message when it fails.
+fn run_fixture(fixture: &Fixture, el: Guest, executor: &Executor) -> (String, Option<String>) {
+    let outcome = el
+        .io(fixture)
+        .map_err(|err| format!("io: {err:#}"))
+        .and_then(|(input, expected)| {
+            let output = executor.execute(&input).map_err(|err| format!("{err:#}"))?;
+            if output.get(..expected.len()) == Some(expected.as_slice()) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "output mismatch: expected {} got {}",
+                    hex::encode(&expected),
+                    hex::encode(output.get(..expected.len()).unwrap_or(&output)),
+                ))
+            }
+        });
+    (fixture.name.clone(), outcome.err())
 }
 
-fn emulate(el: El, elf_path: &Path, ziskemu: &Path, path: &Path) -> Result<String> {
-    let tmpdir = tempfile::tempdir()?;
-    let input_path = tmpdir.path().join("input");
-    let output_path = tmpdir.path().join("output");
-
-    let (name, expected_output) = {
-        let StatelessValidatorFixture {
-            name,
-            stateless_input,
-            success,
-        } = serde_json::from_slice(&fs::read(path)?)?;
-        let (input, expected_output) = match el {
-            El::Reth => reth::io(&stateless_input, success)?,
-            El::Zesu => zesu::io(&stateless_input, success)?,
-        };
-        fs::write(&input_path, frame_input(&input))?;
-        (name, expected_output)
-    };
-
-    let run = Command::new(ziskemu)
-        .arg("-e")
-        .arg(elf_path)
-        .arg("-i")
-        .arg(&input_path)
-        .arg("-o")
-        .arg(&output_path)
-        .output()?;
-
-    if !run.status.success() {
-        bail!(
-            "ziskemu failed for {name} (exit {:?}, signal {:?})\n{}{}",
-            run.status.code(),
-            run.status.signal(),
-            String::from_utf8_lossy(&run.stdout),
-            String::from_utf8_lossy(&run.stderr),
-        );
+/// Renders a markdown report of the run, listing every failing fixture.
+fn render_report(args: &Args, input_dir: &Path, total: usize, failures: &[(&str, &str)]) -> String {
+    let set = input_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("fixtures");
+    let passed = total - failures.len();
+    let mut out = format!(
+        "## {}-{} ({set}): {passed}/{total} fixtures passed\n\n",
+        args.el.as_str(),
+        args.zkvm.as_str(),
+    );
+    if failures.is_empty() {
+        out.push_str("All fixtures passed.\n");
+        return out;
     }
-
-    let actual = fs::read(&output_path)?;
-    if actual.get(..expected_output.len()) != Some(expected_output.as_slice()) {
-        bail!(
-            "output mismatch for {name}\nexpected {}\ngot      {}\nemulator output\n{}",
-            hex::encode(&expected_output),
-            hex::encode(actual.get(..expected_output.len()).unwrap_or(&actual)),
-            String::from_utf8_lossy(&run.stdout),
-        );
+    out.push_str(&format!("{} failed:\n\n| Fixture | Error |\n| --- | --- |\n", failures.len()));
+    for (name, message) in failures {
+        out.push_str(&format!("| {} | {} |\n", md_cell(name), md_cell(message)));
     }
-
-    Ok(name)
+    out
 }
 
-/// Wraps the guest input in the ZisK stdin framing, which is an 8 byte
-/// little endian length followed by the input padded to a multiple of 8.
-fn frame_input(input: &[u8]) -> Vec<u8> {
-    let len = (8 + input.len()).next_multiple_of(8);
-    let mut buf = Vec::with_capacity(len);
-    buf.extend_from_slice(&(input.len() as u64).to_le_bytes());
-    buf.extend_from_slice(input);
-    buf.resize(len, 0);
-    buf
+/// Flattens text into a single markdown table cell, escaping pipes and capping
+/// the length so the rendered table stays readable.
+fn md_cell(text: &str) -> String {
+    let flattened = text.replace(['\n', '\r'], " ").replace('|', "\\|");
+    if flattened.chars().count() > 400 {
+        format!("{}…", flattened.chars().take(400).collect::<String>())
+    } else {
+        flattened
+    }
 }

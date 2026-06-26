@@ -1,3 +1,6 @@
+# Links each EL guest against the chosen zkVM and runs the fixtures in-process.
+# SP1 also needs the succinct toolchain to build libzkevm.a.
+
 name: Integration test
 
 on:
@@ -11,7 +14,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        el: [reth, zesu]
+        zkvm: [zisk, sp1]
+        el: [nethermind, reth, zesu]
+        fixture: [rpc-bpo2, eest-glamsterdam-devnet-5]
+        exclude:
+          - zkvm: sp1
+            el: nethermind
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,8 +35,8 @@ jobs:
             integration-test
             reth
             zisk
-            ziskos-staticlib-ext
 
+      # The harness always builds the ziskemu dependency, so these are needed by every job.
       - name: Install deps
         run: |
           sudo apt-get install -y --no-install-recommends ca-certificates xz-utils jq curl build-essential \
@@ -36,27 +44,43 @@ jobs:
             libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev openmpi-bin openmpi-common libclang-dev \
             clang gcc-riscv64-unknown-elf git libprotobuf-dev lld
 
-      - name: Build ziskemu
-        run: cargo build --release --bin ziskemu --manifest-path zisk/Cargo.toml
+      - name: Install succinct toolchain (sp1up)
+        if: matrix.zkvm == 'sp1'
+        run: |
+          curl -L https://sp1up.succinct.xyz | bash
+          ~/.sp1/bin/sp1up
 
-      - name: Make
-        run: make ${{ matrix.el }}
+      - name: Build guest
+        run: make ${{ matrix.el }}_${{ matrix.zkvm }}
 
       - name: Build integration-test cli
         run: cargo build --release --manifest-path integration-test/Cargo.toml
 
-      - name: Cache fixtures tarball
+      - name: Cache fixture archives
         uses: actions/cache@v4
         with:
-          path: fixtures.tar.zst
+          path: |
+            rpc-bpo2.tar.zst
+            fixtures_zkevm.tar.gz
           key: fixtures-${{ hashFiles('download-fixtures.sh') }}
 
       - name: Download fixtures
-        run: ./download-fixtures.sh
+        run: |
+          ./download-fixtures.sh ${{ matrix.fixture }}
 
       - name: Run integration-test
-        env:
-          RUST_BACKTRACE: 1
         run: |
-          ./integration-test/target/release/integration-test --el ${{ matrix.el }} \
-            --elf-path ./${{ matrix.el }}-zisk.elf --input-dir ./fixtures
+          set +e
+          ./integration-test/target/release/integration-test \
+            --zkvm ${{ matrix.zkvm }} --el ${{ matrix.el }} \
+            --elf-path ./build/${{ matrix.el }}-${{ matrix.zkvm }}.elf \
+            --input-dir ./fixtures/${{ matrix.fixture }} \
+            --report ./report.md > /dev/null 2>&1
+          status=$?
+          # Print only the report; mirror it into the job summary; keep the run's exit code.
+          if [ -f report.md ]; then
+            cat report.md | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "integration-test produced no report (crashed)" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"

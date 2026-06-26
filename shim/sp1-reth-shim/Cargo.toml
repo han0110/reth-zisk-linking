@@ -1,0 +1,11 @@
+[package]
+name = "sp1-reth-shim"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+sp1-zesu-shim = { path = "../sp1-zesu-shim" }

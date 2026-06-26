@@ -62,3 +62,16 @@ unsafe impl critical_section::Impl for CriticalSection {
     unsafe fn acquire() {}
     unsafe fn release(_: ()) {}
 }
+
+/// Platform backed solely by the eth-act zkvm-standards C ABI.
+///
+/// The trait's default `read_input`/`write_output` impls call the
+/// `read_input`/`write_output` symbols, which both ziskos-staticlib and SP1's
+/// libzkevm export, so this guest stays zkVM-agnostic at the C ABI level. Only
+/// `print` lacks a default; a no-op satisfies the trait's "no-op if
+/// unsupported" contract.
+pub struct ZkVMInterfacePlatform;
+
+impl ere_platform_core::Platform for ZkVMInterfacePlatform {
+    fn print(_message: &str) {}
+}

@@ -1,4 +1,7 @@
 [submodule "zisk"]
 	path = zisk
 	url = https://github.com/han0110/zisk.git
-	branch = feature/ziskos-staticlib-use-dedicated-scratch-space
+	branch = patch/v1.0.0-alpha/ziskos-staticlib-use-dedicated-scratch-space
+[submodule "sp1"]
+	path = sp1
+	url = https://github.com/succinctlabs/sp1.git

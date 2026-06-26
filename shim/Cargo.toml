@@ -1,0 +1,14 @@
+# Runtime shim crates that adapt the EL guests to a specific zkVM backend.
+#
+# Each member is a no_std staticlib providing the host symbols a guest needs
+# beyond the zkVM's standard C interface. They are named <zkvm>-<guest>-shim.
+[workspace]
+resolver = "2"
+members = ["sp1-zesu-shim", "sp1-reth-shim", "zisk-zesu-shim"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+panic = "abort"
+debug = false
+codegen-units = 1

@@ -1,4 +1,9 @@
 target
 *.elf
 fixtures*
+rpc-bpo2.tar.zst
+report.md
 zesu.rv64im.o
+/build/
+/tmp/
+target-nofence
