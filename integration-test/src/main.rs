@@ -45,6 +45,9 @@ struct Args {
     /// Cap the number of fixtures executed.
     #[arg(long)]
     limit: Option<usize>,
+    /// Write a markdown pass/fail report to this path.
+    #[arg(long)]
+    report: Option<PathBuf>,
 }
 
 fn repo_path(relative: &str) -> PathBuf {
@@ -121,45 +124,86 @@ fn main() -> Result<()> {
 
     let executor = Executor::new(args.zkvm, &elf)?;
     let total = fixtures.len();
-    let results: Vec<Result<String, String>> = fixtures
+    let results: Vec<(String, Option<String>)> = fixtures
         .par_iter()
         .map(|fixture| run_fixture(fixture, args.el, &executor))
         .collect();
 
-    let mut failures = 0;
-    for (index, result) in results.iter().enumerate() {
-        match result {
-            Ok(name) => println!("[{}/{total}] {name}", index + 1),
-            Err(message) => {
-                println!("[{}/{total}] FAILED {message}", index + 1);
-                failures += 1;
+    let mut failures: Vec<(&str, &str)> = Vec::new();
+    for (index, (name, error)) in results.iter().enumerate() {
+        match error {
+            None => println!("[{}/{total}] {name}", index + 1),
+            Some(message) => {
+                println!("[{}/{total}] FAILED {name}: {message}", index + 1);
+                failures.push((name, message));
             }
         }
     }
 
-    if failures != 0 {
-        bail!("{failures} of {total} fixtures failed");
+    // The report is written before bailing, so it exists even on failure.
+    if let Some(report_path) = &args.report {
+        fs::write(report_path, render_report(&args, &input_dir, total, &failures))
+            .with_context(|| format!("write report {}", report_path.display()))?;
+        println!("wrote report to {}", report_path.display());
+    }
+
+    if !failures.is_empty() {
+        bail!("{} of {total} fixtures failed", failures.len());
     }
     println!("all {total} fixtures passed");
     Ok(())
 }
 
-/// Runs one fixture, returning its name on success or a failure message.
-fn run_fixture(fixture: &Fixture, el: Guest, executor: &Executor) -> Result<String, String> {
-    let (input, expected) = el
+/// Runs one fixture, returning its name and an error message when it fails.
+fn run_fixture(fixture: &Fixture, el: Guest, executor: &Executor) -> (String, Option<String>) {
+    let outcome = el
         .io(fixture)
-        .map_err(|err| format!("{} (io)\n{err:?}", fixture.name))?;
-    let output = executor
-        .execute(&input)
-        .map_err(|err| format!("{}\n{err:?}", fixture.name))?;
-    if output.get(..expected.len()) == Some(expected.as_slice()) {
-        Ok(fixture.name.clone())
+        .map_err(|err| format!("io: {err:#}"))
+        .and_then(|(input, expected)| {
+            let output = executor.execute(&input).map_err(|err| format!("{err:#}"))?;
+            if output.get(..expected.len()) == Some(expected.as_slice()) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "output mismatch: expected {} got {}",
+                    hex::encode(&expected),
+                    hex::encode(output.get(..expected.len()).unwrap_or(&output)),
+                ))
+            }
+        });
+    (fixture.name.clone(), outcome.err())
+}
+
+/// Renders a markdown report of the run, listing every failing fixture.
+fn render_report(args: &Args, input_dir: &Path, total: usize, failures: &[(&str, &str)]) -> String {
+    let set = input_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("fixtures");
+    let passed = total - failures.len();
+    let mut out = format!(
+        "## {}-{} ({set}): {passed}/{total} fixtures passed\n\n",
+        args.el.as_str(),
+        args.zkvm.as_str(),
+    );
+    if failures.is_empty() {
+        out.push_str("All fixtures passed.\n");
+        return out;
+    }
+    out.push_str(&format!("{} failed:\n\n| Fixture | Error |\n| --- | --- |\n", failures.len()));
+    for (name, message) in failures {
+        out.push_str(&format!("| {} | {} |\n", md_cell(name), md_cell(message)));
+    }
+    out
+}
+
+/// Flattens text into a single markdown table cell, escaping pipes and capping
+/// the length so the rendered table stays readable.
+fn md_cell(text: &str) -> String {
+    let flattened = text.replace(['\n', '\r'], " ").replace('|', "\\|");
+    if flattened.chars().count() > 400 {
+        format!("{}…", flattened.chars().take(400).collect::<String>())
     } else {
-        Err(format!(
-            "{}\n  expected {}\n  got      {}",
-            fixture.name,
-            hex::encode(&expected),
-            hex::encode(output.get(..expected.len()).unwrap_or(&output)),
-        ))
+        flattened
     }
 }

@@ -69,11 +69,18 @@ jobs:
           ./download-fixtures.sh ${{ matrix.fixture }}
 
       - name: Run integration-test
-        env:
-          RUST_BACKTRACE: 1
         run: |
-          FIXTURE="${{ matrix.fixture }}"
+          set +e
           ./integration-test/target/release/integration-test \
             --zkvm ${{ matrix.zkvm }} --el ${{ matrix.el }} \
             --elf-path ./build/${{ matrix.el }}-${{ matrix.zkvm }}.elf \
-            --input-dir "./fixtures${FIXTURE:+/$FIXTURE}"
+            --input-dir ./fixtures/${{ matrix.fixture }} \
+            --report ./report.md > /dev/null 2>&1
+          status=$?
+          # Print only the report; mirror it into the job summary; keep the run's exit code.
+          if [ -f report.md ]; then
+            cat report.md | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "integration-test produced no report (crashed)" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"

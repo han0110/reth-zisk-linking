@@ -51,12 +51,15 @@ compared as the full sha256 digest; zesu and nethermind are compared on the
 `new_payload_request_root` + `successful_validation` prefix, since those guests emit
 their own chain config in the output tail.
 
-Fixture layouts are auto-detected per file, and directories are searched recursively
+Two fixture layouts are auto-detected per file, and directories are searched recursively
 (so `--input-dir` can point at one fixture set or at `fixtures/` to run several). The
 RPC fixtures carry top-level `statelessInputBytes`/`statelessOutputBytes` in `.json.zst`
-files; the EEST fixtures carry the same fields per block; a legacy layout carrying a
-reth `StatelessInput` struct is converted through the host bridge
-(`StatelessInput::try_from_reth` -> `to_schema_prefixed_ssz`).
+files; the EEST fixtures carry the same fields per block.
+
+Pass `--report <path>` to write a markdown pass/fail report (a `K/N passed` header plus a
+table of failing fixtures and their error). CI runs each job this way, discards
+stdout/stderr, and publishes the report to the GitHub job summary so each
+`{el}-{zkvm} ({fixture})` pair's status is visible at a glance.
 
 Targets: `make test_zisk_reth`, `test_sp1_reth`, `test_zisk_zesu`, `test_sp1_zesu`,
 `test_zisk_nethermind`. Download a fixture set first.
