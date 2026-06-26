@@ -7,16 +7,11 @@ use crate::fixture::Fixture;
 
 /// Returns Nethermind-format input and the full expected output.
 ///
-/// Nethermind's r7 guest selects the payload type from the 2-byte schema id
-/// (0 = pre-Amsterdam V3, 1 = Amsterdam V4) and decodes a typed 4-field
-/// `NewPayloadRequest`, whereas ere-guests always prefixes `0x0001`. Every SSZ
-/// container is byte-identical between the two, and the ere-guests `ElectraFulu`
-/// (V3) and `Gloas` (V4) variants exactly match Nethermind's 4-field wire shape,
-/// so only the 2-byte schema prefix is rewritten. The variant is recovered by
-/// re-parsing the canonical input bytes. The pre-Electra shapes have no
-/// Nethermind r7 equivalent. Unlike zesu, Nethermind echoes the input chain
-/// config in its output (it derives the active fork from the input), so the full
-/// `StatelessValidationResult` matches and is compared in its entirety.
+/// Nethermind's r7 guest selects the payload type from a 2-byte schema id
+/// (0 = `ElectraFulu` V3, 1 = `Gloas` V4) where ere-guests always prefix
+/// `0x0001`. The SSZ containers are byte-identical, so only the prefix is
+/// rewritten after recovering the variant. Nethermind echoes the input chain
+/// config in its output, so the full `StatelessValidationResult` is compared.
 pub fn io(fixture: &Fixture) -> Result<(Vec<u8>, Vec<u8>)> {
     let canonical = StatelessInput::from_schema_prefixed_ssz(&fixture.input_bytes)?;
 

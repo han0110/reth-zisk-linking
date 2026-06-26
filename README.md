@@ -1,98 +1,59 @@
-# PoC for linking execution-layer guests with the ZisK runtime
+# zkEVM PoC
 
-This repository links a no_std reth stateless block validator (and the Zig "zesu"
-executor) against zkVM runtimes that export the eth-act
-[zkvm-standards](https://github.com/eth-act/zkvm-standards) C ABI, then runs them
-through an emulator over fixtures. Execution only, no proving.
+A proof of concept that links Ethereum execution-layer (EL) guests against zkVM
+runtimes through the eth-act [zkvm-standards](https://github.com/eth-act/zkvm-standards)
+C ABI, then runs them through emulators over test fixtures. Execution only, no proving.
 
-## Reth guest (`reth/`)
+## How it works
 
-The guest is a thin platform adapter over the canonical
-[`ere-guests`](https://github.com/eth-act/ere-guests) stateless validator. It
-implements `ere_platform_core::Platform` as `ZkVMInterfacePlatform`, whose
-`read_input`/`write_output` default impls call the zkvm-standards C ABI symbols
-that both `ziskos-staticlib` and SP1's `libzkevm` export, then calls the canonical
-`entrypoint`. All validation logic lives upstream in ere-guests; only the platform
-binding is local.
+- EL guests import undefined `zkvm_*` C ABI symbols (crypto precompiles, IO).
+- A zkVM runtime archive provides those symbols at link time.
+- The linked ELF is emulated over fixtures, and the committed output is compared
+  against the expected result.
 
-- Input is canonical schema-prefixed SSZ; output is the sha256 digest of the SSZ
-  `StatelessValidationResult`.
-- The full unpatched reth/revm/alloy/stateless stack (reth v2.3.0) compiles to
-  `riscv64im-unknown-none-elf` via the custom target spec
-  [`reth/targets/riscv64im-unknown-none-elf.json`](reth/targets/riscv64im-unknown-none-elf.json),
-  which sets `max-atomic-width: 64` so `Arc`/atomics compile. `-C passes=lower-atomic`
-  then lowers them to single-core memory ops, leaving no atomic instructions in the
-  object. This retires the previous portable-atomic fork stack.
-- Built as a static library and linked against either runtime.
+## Components
 
-## ZisK runtime (`zisk/` submodule)
+| Piece | Role |
+| --- | --- |
+| `reth/` | EL guest: a thin adapter over the canonical eth-act stateless validator |
+| zesu | EL guest: a prebuilt Consensys executor (downloaded `.o`) |
+| nethermind | EL guest: a prebuilt ELF (ZisK only, downloaded) |
+| ZisK (`zisk/`) | zkVM runtime + emulator, pinned to `v1.0.0-alpha` |
+| SP1 (`sp1/`) | zkVM runtime (`libzkevm`), built with the succinct toolchain |
+| `integration-test/` | Harness: normalizes fixtures, runs a guest on a backend, compares output |
 
-- Pinned to the upstream `v1.0.0-alpha` tag, whose transpiler natively executes the
-  RISC-V A extension.
-- `ziskos-staticlib` is built with `zisk-custom-alloc` so it declares no global
-  allocator (the reth guest owns it); a `ForbiddenAlloc` guard turns any stray global
-  allocation into a link error.
-- Accelerator/precompile scratch allocations are routed to a dedicated 2 MiB `.bss`
-  arena (reset per accelerator call) via the `alloc_extern` seam, so they never consume
-  the guest heap.
+## Quick start
 
-## SP1 runtime (`sp1/` submodule)
+```sh
+# Build a guest linked against a backend
+make reth_zisk          # also: zesu_zisk, reth_sp1, zesu_sp1, nethermind_zisk
 
-The same reth guest links against SP1's `libzkevm` (a separate `make sp1_sdk` build)
-plus `shim/sp1-reth-shim`, since libzkevm also exports the zkvm-standards C ABI.
+# Download a fixture set
+./download-fixtures.sh rpc-bpo2                  # 20 real mainnet blocks
+./download-fixtures.sh eest-glamsterdam-devnet-5 # 23264 execution-spec blocks
 
-## Integration tests (`integration-test/`)
+# Run the harness
+make test_zisk_reth     # also: test_sp1_reth, test_zisk_zesu, test_sp1_zesu, test_zisk_nethermind
+```
 
-`cargo run -- --zkvm <zisk|sp1> --el <reth|zesu|nethermind>` normalizes each fixture to
-canonical schema-prefixed SSZ input bytes and the canonical SSZ
-`StatelessValidationResult` output bytes, runs the input through the selected guest on
-the selected backend in-process, and compares the committed output. reth output is
-compared as the full sha256 digest; zesu and nethermind are compared on the
-`new_payload_request_root` + `successful_validation` prefix, since those guests emit
-their own chain config in the output tail.
+Each run accepts `--report <path>` for a markdown pass/fail report; CI publishes
+it to the GitHub job summary.
 
-Two fixture layouts are auto-detected per file, and directories are searched recursively
-(so `--input-dir` can point at one fixture set or at `fixtures/` to run several). The
-RPC fixtures carry top-level `statelessInputBytes`/`statelessOutputBytes` in `.json.zst`
-files; the EEST fixtures carry the same fields per block.
+## Current status
 
-Pass `--report <path>` to write a markdown pass/fail report (a `K/N passed` header plus a
-table of failing fixtures and their error). CI runs each job this way, discards
-stdout/stderr, and publishes the report to the GitHub job summary so each
-`{el}-{zkvm} ({fixture})` pair's status is visible at a glance.
+All combinations pass the 20 real-mainnet `rpc-bpo2` blocks. EEST results below.
 
-Targets: `make test_zisk_reth`, `test_sp1_reth`, `test_zisk_zesu`, `test_sp1_zesu`,
-`test_zisk_nethermind`. Download a fixture set first.
+| EL x zkVM | EEST fail / 23264 | rpc-bpo2 | Remaining failures |
+| --- | --- | --- | --- |
+| reth x ZisK | 16 | 20 / 20 | reth/fixture divergences (host-confirmed) |
+| reth x SP1 | 16 | 20 / 20 | the same 16 reth/fixture divergences |
+| zesu x SP1 | 48 | 20 / 20 | zesu binary: ripemd layout |
+| zesu x ZisK | 99 | 20 / 20 | zesu binary: ripemd layout + blake2 alignment |
+| nethermind x ZisK | 614 | 20 / 20 | nethermind prebuilt build: BLS + EVM divergences |
 
-### Fixture sets
+Every remaining EEST failure is an EL (guest) issue, not a zkVM issue. reth, the
+canonical guest, fails only the same 16 fixtures on both backends, and those 16
+are also rejected by the host with no zkVM. The zesu and nethermind failures are
+non-conformances in their prebuilt binaries.
 
-`./download-fixtures.sh <name>` fetches a set into `fixtures/<name>`.
-
-- `rpc-bpo2` pulls the `han0110/ere-guests`
-  [`rpc-fixtures@v0.1.0`](https://github.com/han0110/ere-guests/releases/tag/rpc-fixtures@v0.1.0)
-  RPC-derived mainnet blocks.
-- `eest-glamsterdam-devnet-5` pulls the `ethereum/execution-specs`
-  [`tests-zkevm@v0.4.1`](https://github.com/ethereum/execution-specs/releases/tag/tests-zkevm@v0.4.1)
-  `blockchain_test` set, 23264 blocks all schema `0x0001`, so reth, zesu, and nethermind
-  consume them without translation.
-
-The CI matrix runs `{zisk, sp1} x {reth, zesu} x {rpc-bpo2, eest-glamsterdam-devnet-5}`,
-plus nethermind on ZisK over both sets.
-
-### Nethermind guest (`--el nethermind`, ZisK only)
-
-The prebuilt
-[`zisk-guest-r7`](https://github.com/NethermindEth/nethermind/releases/tag/zisk-guest-r7)
-ELF (requires ZisK v1.0.0-alpha) is downloaded and emulated directly, passing all 500
-fixtures on the full output. Unlike zesu, Nethermind echoes the input chain config (it
-derives the active fork from the input), so the entire `StatelessValidationResult` (root,
-success, chain config) matches and is compared in full. Nethermind and ere-guests both
-implement execution-specs
-`stateless_ssz.py`, and every SSZ container (execution payload, witness, chain config,
-public keys) is byte-identical between them. The only wire difference is the 2-byte
-schema prefix: Nethermind selects the payload type from the schema id (`0` =
-pre-Amsterdam V3, `1` = Amsterdam V4), whereas ere-guests always emits `0x0001`. The
-nethermind IO module therefore reuses the canonical SSZ body verbatim and rewrites only
-the prefix, chosen from the payload variant (`ElectraFulu` -> `0`, `Gloas` -> `1`).
-ere-guests' `ElectraFulu`/`Gloas` shapes match Nethermind's 4-field `NewPayloadRequest`
-exactly; the pre-Electra shapes have no r7 equivalent.
+See `CLAUDE.md` for architecture, build recipes, and the encoding contracts.

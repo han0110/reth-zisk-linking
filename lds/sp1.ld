@@ -1,16 +1,9 @@
 /*
- * zkvm-sp1.ld -- Linker script for EL guests (reth/zesu) linked against SP1's
- * libzkevm.a. Derived from external/sp1/zkevm/zkvm.ld.
- *
- * The only deviation from the stock SP1 script is `_heap_end`. SP1's own
- * embedded allocator bounds the heap with a compile-time constant, so the
- * stock script can set `_heap_end = __input_start` (0x1C00000000, ~118 GiB up).
- * The EL guests instead take the address of the `_heap_end` linker symbol via
- * PC-relative addressing (R_RISCV_PCREL_HI20, +/-2 GiB reach), so a symbol that
- * far from the code at 0x78000000 overflows the relocation. `_heap_end` is
- * therefore capped to a PC-relative-reachable address, yielding a ~1.875 GiB
- * heap -- ample for stateless block validation -- while the reserved input
- * region at __input_start stays untouched.
+ * Linker script for EL guests (reth/zesu) linked against SP1's libzkevm.a,
+ * derived from external/sp1/zkevm/zkvm.ld. The sole deviation is `_heap_end`.
+ * EL guests take its address via PC-relative addressing (R_RISCV_PCREL_HI20,
+ * +/-2 GiB reach) from code at 0x78000000, so SP1's stock 0x1C00000000 would
+ * overflow the relocation and it is capped to 0xF0000000, a ~1.875 GiB heap.
  */
 
 OUTPUT_FORMAT("elf64-littleriscv")
@@ -74,17 +67,10 @@ SECTIONS
 
     /*
      * Heap partition between libzkevm's TLSF and the EL guest's bump allocator.
-     *
-     * SP1's libzkevm keeps its own #[global_allocator] (embedded TLSF) because
-     * its precompiles (modexp, BN254/BLS pairing) allocate. __start initializes
-     * that TLSF over [_end, EMBEDDED_RESERVED_INPUT_START). The EL guest (reth)
-     * has its own bump allocator. Left unpartitioned, both hand out memory from
-     * _end and corrupt each other once a precompile allocates.
-     *
-     * `_libzkevm_tlsf_size` reserves the low region for libzkevm's TLSF; the EL
-     * bump heap starts above it. The reserved size dwarfs precompile scratch
-     * (pairings/modexp allocate kilobytes), so the TLSF never grows into the EL
-     * region. `_heap_end` stays capped at 0xF0000000 for PC-relative reach.
+     * libzkevm's embedded TLSF (its modexp/pairing precompiles allocate) is set
+     * up over [_end, ...) and the EL bump allocator also starts at _end, so
+     * without a split both hand out the same memory and corrupt each other.
+     * Reserve _libzkevm_tlsf_size for the TLSF and start the EL heap above it.
      */
     _libzkevm_tlsf_size = 0x10000000;  /* 256 MiB reserved for libzkevm TLSF */
     _heap_start = _end + _libzkevm_tlsf_size;

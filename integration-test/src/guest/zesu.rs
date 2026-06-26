@@ -7,5 +7,8 @@ use crate::fixture::Fixture;
 /// in the SSZ output tail, so only the leading 33 bytes (root + success) are
 /// compared.
 pub fn io(fixture: &Fixture) -> Result<(Vec<u8>, Vec<u8>)> {
-    Ok((fixture.input_bytes.clone(), fixture.output_bytes[..33].to_vec()))
+    Ok((
+        fixture.input_bytes.clone(),
+        fixture.output_bytes[..33].to_vec(),
+    ))
 }

@@ -2,11 +2,9 @@
 
 # Downloads a fixture set into ./fixtures/<name>. Both sets normalize to canonical
 # schema-prefixed SSZ input/output bytes that the integration test consumes.
-#
-#   rpc-bpo2                  RPC-derived mainnet blocks (witness-generator-spec-cli),
-#                             one *.json.zst per block with top-level statelessInputBytes.
-#   eest-glamsterdam-devnet-5 EEST blockchain_test blocks (execution-specs zkevm),
-#                             statelessInputBytes/statelessOutputBytes precomputed per block.
+# rpc-bpo2 holds RPC-derived mainnet blocks, one *.json.zst per block with a
+# top-level statelessInputBytes. eest-glamsterdam-devnet-5 holds EEST
+# blockchain_test blocks with statelessInputBytes/statelessOutputBytes per block.
 
 set -euo pipefail
 

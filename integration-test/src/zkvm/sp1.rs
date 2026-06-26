@@ -1,4 +1,5 @@
-//! A pool of reusable SP1 executors, modeled on ere's SP1 prover pool.
+//! A bounded pool of reusable SP1 executors sharing one transpiled program, modeled on ere's SP1
+//! prover pool.
 
 use std::{
     ops::{Deref, DerefMut},
@@ -9,7 +10,6 @@ use anyhow::{Result, anyhow};
 use crossbeam_channel::{Receiver, Sender, bounded};
 use sp1_core_executor::{MinimalExecutorEnum, Program};
 
-/// A bounded pool of reusable executors sharing one transpiled program.
 pub struct Sp1Pool {
     rx: Receiver<MinimalExecutorEnum>,
     tx: Sender<MinimalExecutorEnum>,
@@ -27,8 +27,7 @@ impl Sp1Pool {
         Ok(Self { rx, tx })
     }
 
-    /// Runs the input on a free executor, blocking until one is available. The
-    /// executor is reset and returned to the pool when done.
+    /// Runs the input on a free executor, blocking until one is available.
     pub fn execute(&self, input: &[u8]) -> Result<Vec<u8>> {
         let mut executor = Guard {
             executor: Some(self.rx.recv().unwrap()),

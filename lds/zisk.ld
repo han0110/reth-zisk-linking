@@ -1,5 +1,5 @@
 /* Copied and modified from https://github.com/0xPolygonHermez/rust/blob/zisk/compiler/rustc_target/src/spec/targets/riscv64ima_zisk_zkvm_elf_linker_script.ld */
-/* Modification inlcudes only additional _heap_start and _heap_end */
+/* Modification includes only additional _heap_start and _heap_end */
 
 OUTPUT_FORMAT("elf64-littleriscv")
 OUTPUT_ARCH("riscv")
@@ -23,31 +23,10 @@ _output_data_size     = 0x10000;   /* 64 KB reserved */
 _float_ram_data_size  = 0x10000;   /* 64 KB reserved */
 
 /*
-
-0xA0000000  ┌────────────────────┐
-            │ .general_registers │  64 KB reserved (NOLOAD)
-            │  0x10000 bytes     │  _general_registers_start / _end
-0xA0010000  ├────────────────────┤
-            │ .float_registers   │  64 KB reserved (NOLOAD)
-            │  0x10000 bytes     │  _float_registers_start / _end
-0xA001FFFF  └────────────────────┘ ← _kernel_heap_top
-0xA0020000  ┌────────────────────┐
-            │ .output_data       │  64 KB reserved (NOLOAD)
-            │  0x10000 bytes     │  _output_data_start / _end
-0xA0030000  ├────────────────────┤
-            │   .data            │
-            │   .bss             │
-            ├────────────────────┤ ← _bss_end
-            │   stack ↑ 4MB      │
-            ├────────────────────┤ ← _init_stack_top = _kernel_heap_bottom
-            │   heap ↓           │
-            │                    │
-0xBFFEFFFF  │                    │
-0xBFFF0000  ├────────────────────┤ ← _kernel_heap_top 
-            │ float ram          │
-0xC0000000  └────────────────────┘ 
-
-*/
+ * RAM layout reserves .output_data (64 KB, NOLOAD), then .data, .bss, a 4 MB
+ * stack, and the heap, with the top _float_ram_data_size (64 KB) held back to
+ * bound the heap.
+ */
 
 SECTIONS
 {
@@ -56,8 +35,6 @@ SECTIONS
   . = ALIGN(8);
   PROVIDE(_global_pointer = .);
   .rodata : { *(.rodata .rodata.*)} >rom AT>rom :rodata
-
-  /* reserved space for output data */
 
   .output_data (NOLOAD) : {
     PROVIDE(_output_data_start = .);
@@ -70,11 +47,11 @@ SECTIONS
   .bss : {
     PROVIDE(_bss_start = .);
     *(.bss .bss.*);
-    PROVIDE(_bss_end = .); # ... and one at the end
+    PROVIDE(_bss_end = .);
   } >ram AT>ram :bss
 
   . = ALIGN(8);
-  PROVIDE(_init_stack_top = . + _stack_size); # reserve 4M bytes for the initialisation stack
+  PROVIDE(_init_stack_top = . + _stack_size);
 
   PROVIDE(_kernel_heap_bottom = _init_stack_top);
   PROVIDE(_kernel_heap_top = ORIGIN(ram) + LENGTH(ram) - _float_ram_data_size);

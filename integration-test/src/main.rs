@@ -2,8 +2,7 @@
 //!
 //! Each fixture is normalized to canonical SSZ input/output bytes, converted to
 //! the selected guest's wire format, executed on the selected backend, and the
-//! committed output is compared against the expected bytes. Choose the backend
-//! with --zkvm and the guest with --el.
+//! committed output is compared against the expected bytes.
 
 mod fixture;
 mod guest;
@@ -51,7 +50,9 @@ struct Args {
 }
 
 fn repo_path(relative: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(relative)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(relative)
 }
 
 fn main() -> Result<()> {
@@ -60,9 +61,16 @@ fn main() -> Result<()> {
         bail!("--el nethermind is a ZisK guest ELF and is only supported with --zkvm zisk");
     }
     let elf_path = args.elf_path.clone().unwrap_or_else(|| {
-        repo_path(&format!("build/{}-{}.elf", args.el.as_str(), args.zkvm.as_str()))
+        repo_path(&format!(
+            "build/{}-{}.elf",
+            args.el.as_str(),
+            args.zkvm.as_str()
+        ))
     });
-    let input_dir = args.input_dir.clone().unwrap_or_else(|| repo_path("fixtures"));
+    let input_dir = args
+        .input_dir
+        .clone()
+        .unwrap_or_else(|| repo_path("fixtures"));
 
     let elf = fs::read(&elf_path).with_context(|| format!("read elf {}", elf_path.display()))?;
     println!(
@@ -84,9 +92,10 @@ fn main() -> Result<()> {
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| name.ends_with(".json") || name.ends_with(".json.zst"))
         })
-        .filter(|path| match &args.filter {
-            Some(needle) => path.to_string_lossy().contains(needle.as_str()),
-            None => true,
+        .filter(|path| {
+            args.filter
+                .as_ref()
+                .is_none_or(|needle| path.to_string_lossy().contains(needle))
         })
         .collect::<Vec<_>>();
     files.sort();
@@ -94,10 +103,11 @@ fn main() -> Result<()> {
         bail!("no *.json fixtures in {}", input_dir.display());
     }
 
-    // Load and normalize every fixture, reporting unparseable files rather than
-    // silently dropping them. Sorted by name for deterministic numbering.
-    let loaded: Vec<Result<Vec<Fixture>>> =
-        files.par_iter().map(|path| fixture::load(path)).collect();
+    // Report unparseable fixtures rather than silently dropping them.
+    let loaded = files
+        .par_iter()
+        .map(|path| fixture::load(path))
+        .collect::<Vec<_>>();
     let mut fixtures = Vec::new();
     let mut load_errors = 0usize;
     for result in loaded {
@@ -142,8 +152,11 @@ fn main() -> Result<()> {
 
     // The report is written before bailing, so it exists even on failure.
     if let Some(report_path) = &args.report {
-        fs::write(report_path, render_report(&args, &input_dir, total, &failures))
-            .with_context(|| format!("write report {}", report_path.display()))?;
+        fs::write(
+            report_path,
+            render_report(&args, &input_dir, total, &failures),
+        )
+        .with_context(|| format!("write report {}", report_path.display()))?;
         println!("wrote report to {}", report_path.display());
     }
 
@@ -154,7 +167,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Runs one fixture, returning its name and an error message when it fails.
 fn run_fixture(fixture: &Fixture, el: Guest, executor: &Executor) -> (String, Option<String>) {
     let outcome = el
         .io(fixture)
@@ -174,7 +186,6 @@ fn run_fixture(fixture: &Fixture, el: Guest, executor: &Executor) -> (String, Op
     (fixture.name.clone(), outcome.err())
 }
 
-/// Renders a markdown report of the run, listing every failing fixture.
 fn render_report(args: &Args, input_dir: &Path, total: usize, failures: &[(&str, &str)]) -> String {
     let set = input_dir
         .file_name()
@@ -190,20 +201,20 @@ fn render_report(args: &Args, input_dir: &Path, total: usize, failures: &[(&str,
         out.push_str("All fixtures passed.\n");
         return out;
     }
-    out.push_str(&format!("{} failed:\n\n| Fixture | Error |\n| --- | --- |\n", failures.len()));
+    out.push_str(&format!(
+        "{} failed:\n\n| Fixture | Error |\n| --- | --- |\n",
+        failures.len()
+    ));
     for (name, message) in failures {
         out.push_str(&format!("| {} | {} |\n", md_cell(name), md_cell(message)));
     }
     out
 }
 
-/// Flattens text into a single markdown table cell, escaping pipes and capping
-/// the length so the rendered table stays readable.
 fn md_cell(text: &str) -> String {
     let flattened = text.replace(['\n', '\r'], " ").replace('|', "\\|");
-    if flattened.chars().count() > 400 {
-        format!("{}…", flattened.chars().take(400).collect::<String>())
-    } else {
-        flattened
+    match flattened.char_indices().nth(400) {
+        Some((end, _)) => format!("{}…", &flattened[..end]),
+        None => flattened,
     }
 }
